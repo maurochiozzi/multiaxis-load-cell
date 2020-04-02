@@ -48,35 +48,47 @@ bool is_slave_ocupado;
 // --------------------------------------------------------------------------------------------- //
 // Variáveis globais para as pontes
 //
-//                          Ponte A (1 & 2)                 ^ y
-//                        \                         |
-//                         \                      z o --> x
-//                          \         Ponte B (1 & 2)
+//                          Ponte A (1 & 2)                     ^ y
+//                        \                                     |
+//                         \                                  z o --> x
+//                          \         Ponte B (3 & 4)
 //                           o -------
 //                          /
 //                         /
 //                        /
-//                          Ponte C (1 & 2)
+//                          Ponte C (5 & 6)
 //
+// Obs.: as pontes impares estarão nas faces laterais, enquanto as pontes pares estarão nas faces
+// superiores e inferiores do elemento elástico
+//
+// Todos os HX711 possuem o mesmo SCK, que é o pino digital 9
+#define BRIDGE_SCK 9
+
 // Declaração de cada ponte em cada elemento elástico
-Bridge ponte_a1, ponte_a2;
-Bridge ponte_b1, ponte_b2;
-Bridge ponte_c1, ponte_c2;
+Bridge pontes[6] = {
+    Bridge(8, BRIDGE_SCK), Bridge(7, BRIDGE_SCK),  // Pontes 1 & 2
+    Bridge(6, BRIDGE_SCK), Bridge(5, BRIDGE_SCK),  // Pontes 3 & 4
+    Bridge(2, BRIDGE_SCK), Bridge(3, BRIDGE_SCK)}; // Pontes 5 & 6
 
-// Offsets de cada ponte para tarar o resultado
-int offset_a1, offset_a2;
-int offset_b1, offset_b2;
-int offset_c1, offset_c2;
+const int DISTANCIA_SG = 6; // 6 mm do ponto O até o centro do strain gauge
 
-// Constantes de proporcionalidade. Devem ser calibrados periodicamente e armazenados em uma
-// memória não volátil #TODO: ver a lib EEPROM do ATmega328P
-int k_a1, k_a2;
-int k_b1, k_b2;
-int k_c1, k_c2;
+// Temporario. Essas escalas devem ser calibradas periodicamente, uma vez que o conjunto esteja
+// finalizado
+float scales[6] = {10000.f, 10000.f,
+                   10000.f, 10000.f,
+                   10000.f, 10000.f};
+
+// Forcas aferidas por cada ponte
+int forcas_pontes[6] = {0};
+
+// Separação dos objetos, para ficar mais intuivo no calculo das resultantes
+int *forcas_pontes_a = (&forcas_pontes[0]);
+int *forcas_pontes_b = (&forcas_pontes[2]);
+int *forcas_pontes_c = (&forcas_pontes[4]);
 
 // Valores das resultantes encontradas a cada interação
 int forca_x, forca_y, forca_z;
-int momento_roll, momento_pitch, momento_yax;
+int momento_roll, momento_pitch, momento_yaw;
 
 // Devem ser calculadas em 20 Hz
 unsigned long ultimo_calculo_resultantes;
@@ -105,10 +117,11 @@ void rotina();
 // Pontes de Wheatstone
 // Calcula os coefientes de proporcionalidade de cada ponte
 void calibraCoeficientesProporcionalidade();
+void setCoeficientesProporcionalidade();
 // Calcula o offset para ser compensando quando não houver carga na ponte
 void calculaOffSetsPontes();
-// Recupera o valor lido pela ponte
-void getValorBrutoPonte(Bridge &ponte);
+// Recupera todas as forças aferidas pelas pontes
+void getForcasPontes();
 // Calcula as forças resultantes de cada componente
 void calculaResultantes();
 
@@ -177,14 +190,18 @@ void inicializacao()
 // --------------------------------------------------------------------------------------------- //
 void rotina()
 {
-  if ((millis() - ultima_leitura_serial > 75) && !possuiRequisicaoPendente())
+  getForcasPontes();
+
+  if ((millis() - ultimo_calculo_resultantes > 50) && !possuiRequisicaoPendente())
   {
 
-    ultima_leitura_serial = millis();
+    ultimo_calculo_resultantes = millis();
 
     // Trava as requisições aqui, para não ser enviado informações que ainda estão
     // sendo convertidas
     is_slave_ocupado = true;
+
+    calculaResultantes();
 
     // Libera as requisições
     is_slave_ocupado = false;
@@ -196,7 +213,7 @@ void rotina()
 
 void inicializaPontes()
 {
-  calibraCoeficientesProporcionalidade();
+  setCoeficientesProporcionalidade();
   calculaOffSetsPontes();
 }
 
@@ -222,18 +239,47 @@ void inicializaDebug()
 
 void calibraCoeficientesProporcionalidade()
 {
+  float scales[6] = {10000.f, 10000.f,
+                     10000.f, 10000.f,
+                     10000.f, 10000.f};
+}
+
+void setCoeficientesProporcionalidade()
+{
+  for (int i = 6; i < 6; i++)
+  {
+    pontes[i].set_scale(scales[i]);
+  }
 }
 
 void calculaOffSetsPontes()
 {
+  for (int i = 6; i < 6; i++)
+  {
+    pontes[i].tare();
+  }
 }
 
-void getValorBrutoPonte(Bridge &ponte)
+void getForcasPontes()
 {
+  for (int i = 0; i < 6; i++)
+  {
+    if (pontes[i].is_ready())
+    {
+      forcas_pontes[i] = pontes[i].get_units();
+    }
+  }
 }
 
 void calculaResultantes()
 {
+  forca_x = 1;
+  forca_y = 1;
+  forca_z = 1;
+
+  momento_pitch = 1;
+  momento_roll = 1;
+  momento_yaw = 1;
 }
 
 void quandoRequisitado()
