@@ -3,7 +3,7 @@
 // UNIVERSIDADE FEDERAL DO RIO GRANDE DO NORTE
 // CAR-KARA EMBEDDED SYSTEMS & DATA AQUISITION
 //
-// LOAD CELL SLAVE
+// LOAD CELL MAIN
 //
 // -> CKA4932
 //
@@ -17,7 +17,7 @@
 #include <HX711.h>
 
 // --------------------------------------------------------------------------------------------- //
-// Requistion erros code
+// Códigos de requisição
 #define DISPOSITIVO_INICIALIZANDO 0xFD
 #define DISPOSITIVO_OCUPADO 0xFE
 #define REQUISICAO_NAO_ENCONTRADA 0xFF
@@ -38,15 +38,48 @@ unsigned long ultima_leitura_serial;
 // --------------------------------------------------------------------------------------------- //
 // Flags para status do dispositivo
 
-// Quando o dispositivo está inicializando, ele está ocupado, sim. Mas é feita essa distinção
-// para o master saber se ele ta inicializando
-
 // Se ainda está inicializando o dispositivo, seta como true para não consumir a requisição e
 // informar para o master que está sendo inicializado
 bool is_slave_inicializando;
 // Trava as requisições I2C em partes cruciais do código, para não misturar as informações antigas
 // com as novas no momento da conversão GPS -> POLLH e ECEF
 bool is_slave_ocupado;
+
+// --------------------------------------------------------------------------------------------- //
+// Variáveis globais para as pontes
+//
+//                          Ponte A (1 & 2)                 ^ y
+//                        \                         |
+//                         \                      z o --> x
+//                          \         Ponte B (1 & 2)
+//                           o -------
+//                          /
+//                         /
+//                        /
+//                          Ponte C (1 & 2)
+//
+// Declaração de cada ponte em cada elemento elástico
+Bridge ponte_a1, ponte_a2;
+Bridge ponte_b1, ponte_b2;
+Bridge ponte_c1, ponte_c2;
+
+// Offsets de cada ponte para tarar o resultado
+int offset_a1, offset_a2;
+int offset_b1, offset_b2;
+int offset_c1, offset_c2;
+
+// Constantes de proporcionalidade. Devem ser calibrados periodicamente e armazenados em uma
+// memória não volátil #TODO: ver a lib EEPROM do ATmega328P
+int k_a1, k_a2;
+int k_b1, k_b2;
+int k_c1, k_c2;
+
+// Valores das resultantes encontradas a cada interação
+int forca_x, forca_y, forca_z;
+int momento_roll, momento_pitch, momento_yax;
+
+// Devem ser calculadas em 20 Hz
+unsigned long ultimo_calculo_resultantes;
 
 // --------------------------------------------------------------------------------------------- //
 //
@@ -57,6 +90,8 @@ bool is_slave_ocupado;
 // --------------------------------------------------------------------------------------------- //
 // Inicializacao do dispositivo
 void inicializacao();
+// Inicializa Pontes
+void inicializaPontes();
 // Inicializacao da comunicação i2c
 void inicializaI2C();
 // Inicializacao do debug
@@ -65,6 +100,17 @@ void inicializaDebug();
 // --------------------------------------------------------------------------------------------- //
 // Rotina que ficará sendo executada no código
 void rotina();
+
+// --------------------------------------------------------------------------------------------- //
+// Pontes de Wheatstone
+// Calcula os coefientes de proporcionalidade de cada ponte
+void calibraCoeficientesProporcionalidade();
+// Calcula o offset para ser compensando quando não houver carga na ponte
+void calculaOffSetsPontes();
+// Recupera o valor lido pela ponte
+void getValorBrutoPonte(Bridge &ponte);
+// Calcula as forças resultantes de cada componente
+void calculaResultantes();
 
 // --------------------------------------------------------------------------------------------- //
 // I2C
@@ -79,8 +125,9 @@ void consumirRequisicao();
 bool possuiRequisicaoPendente();
 // Wire.write só envia um byte por vez. Por tanto, para tipos com mais de um byte
 // (int, float, double, long, etc), é necessário enviar um byte de cada vez.
-// Long possue 4 bytes no ATmega328
+// long possue 4 bytes no ATmega328
 void escreverQuatroBytesWire(long longParaEnviar);
+// int possue 2 bytes
 void escreverDoisBytesWire(int intParaEnviar);
 
 // --------------------------------------------------------------------------------------------- //
@@ -114,6 +161,8 @@ void inicializacao()
 {
   // Função init do Arduino
   init();
+  // inicializa as pontes
+  inicializaPontes();
   // inicializa a comunicação I2c
   inicializaI2C();
   // Inicializa o debug, se for setado true
@@ -145,6 +194,12 @@ void rotina()
 // --------------------------------------------------------------------------------------------- //
 // Demais funções
 
+void inicializaPontes()
+{
+  calibraCoeficientesProporcionalidade();
+  calculaOffSetsPontes();
+}
+
 void inicializaI2C()
 {
   // Endereço slave do dispositivo
@@ -163,6 +218,22 @@ void inicializaDebug()
   myDebug.begin(115200);
   myDebug.println("Debugando...");
 #endif
+}
+
+void calibraCoeficientesProporcionalidade()
+{
+}
+
+void calculaOffSetsPontes()
+{
+}
+
+void getValorBrutoPonte(Bridge &ponte)
+{
+}
+
+void calculaResultantes()
+{
 }
 
 void quandoRequisitado()
