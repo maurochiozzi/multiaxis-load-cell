@@ -213,8 +213,8 @@ void rotina()
 
 void inicializaPontes()
 {
-  setCoeficientesProporcionalidade();
   calculaOffSetsPontes();
+  setCoeficientesProporcionalidade();
 }
 
 void inicializaI2C()
@@ -239,9 +239,10 @@ void inicializaDebug()
 
 void calibraCoeficientesProporcionalidade()
 {
-  float scales[6] = {10000.f, 10000.f,
-                     10000.f, 10000.f,
-                     10000.f, 10000.f};
+  for (int i = 0; i < 6; i++)
+  {
+    scales[i] = 10000.f;
+  }
 }
 
 void setCoeficientesProporcionalidade()
@@ -273,13 +274,13 @@ void getForcasPontes()
 
 void calculaResultantes()
 {
-  forca_x = 1;
-  forca_y = 1;
-  forca_z = 1;
+  forca_x++;
+  forca_y++;
+  forca_z++;
 
-  momento_pitch = 1;
-  momento_roll = 1;
-  momento_yaw = 1;
+  momento_pitch++;
+  momento_roll++;
+  momento_yaw++;
 }
 
 void quandoRequisitado()
@@ -294,10 +295,18 @@ void quandoRequisitado()
     Wire.write(DISPOSITIVO_INICIALIZANDO);
   }
   else if (requisicao == 0x05)
-  {                            // Requisicao das forças: 12 Bytes
-    escreverDoisBytesWire(12); // Fx
-    escreverDoisBytesWire(13); // Fy
-    escreverDoisBytesWire(14); // Fz
+  {                                 // Requisicao das forças: 12 Bytes
+    escreverDoisBytesWire(forca_x); // Fx
+    escreverDoisBytesWire(forca_y); // Fy
+    escreverDoisBytesWire(forca_z); // Fz
+
+    consumirRequisicao();
+  }
+  else if (requisicao == 0x06)
+  {                                       // Requisicao dos momentos: 12 Bytes
+    escreverDoisBytesWire(momento_pitch); // Fx
+    escreverDoisBytesWire(momento_roll);  // Fy
+    escreverDoisBytesWire(momento_yaw);   // Fz
 
     consumirRequisicao();
   }
