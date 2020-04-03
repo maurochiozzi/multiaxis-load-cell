@@ -35,6 +35,8 @@ unsigned long ultima_leitura_serial;
 #define myDebug Serial
 #endif
 
+const int BUZZER = 13;
+
 // --------------------------------------------------------------------------------------------- //
 // Flags para status do dispositivo
 
@@ -74,17 +76,19 @@ const int DISTANCIA_SG = 6; // 6 mm do ponto O até o centro do strain gauge
 
 // Temporario. Essas escalas devem ser calibradas periodicamente, uma vez que o conjunto esteja
 // finalizado
-float scales[6] = {10000.f, 10000.f,
-                   10000.f, 10000.f,
-                   10000.f, 10000.f};
+float scales[6] = {2043.63, 2219.46,
+                   2088.70, 2184.90,
+                   2072.34, 2144.18};
+
+const int PESO_REF = 185.1;
 
 // Forcas aferidas por cada ponte
-int forcas_pontes[6] = {0};
+float forcas_pontes[6] = {0};
 
 // Separação dos objetos, para ficar mais intuivo no calculo das resultantes
-int *forcas_pontes_a = (&forcas_pontes[0]);
-int *forcas_pontes_b = (&forcas_pontes[2]);
-int *forcas_pontes_c = (&forcas_pontes[4]);
+float *forcas_pontes_a = (&forcas_pontes[0]);
+float *forcas_pontes_b = (&forcas_pontes[2]);
+float *forcas_pontes_c = (&forcas_pontes[4]);
 
 // Valores das resultantes encontradas a cada interação
 int forca_x, forca_y, forca_z;
@@ -120,6 +124,7 @@ void calibraCoeficientesProporcionalidade();
 void setCoeficientesProporcionalidade();
 // Calcula o offset para ser compensando quando não houver carga na ponte
 void calculaOffSetsPontes();
+float filtraValorPonte(float valor_anterior, float valor_atual);
 // Recupera todas as forças aferidas pelas pontes
 void getForcasPontes();
 // Calcula as forças resultantes de cada componente
@@ -142,6 +147,9 @@ bool possuiRequisicaoPendente();
 void escreverQuatroBytesWire(long longParaEnviar);
 // int possue 2 bytes
 void escreverDoisBytesWire(int intParaEnviar);
+
+// --------------------------------------------------------------------------------------------- //
+void beep(int qnt_beeps = 1);
 
 // --------------------------------------------------------------------------------------------- //
 //
@@ -174,12 +182,15 @@ void inicializacao()
 {
   // Função init do Arduino
   init();
+  // Inicializa o debug, se for setado true
+  inicializaDebug();
+
+  pinMode(BUZZER, OUTPUT);
+
   // inicializa as pontes
   inicializaPontes();
   // inicializa a comunicação I2c
   inicializaI2C();
-  // Inicializa o debug, se for setado true
-  inicializaDebug();
 
   ultima_leitura_serial = millis();
 
@@ -194,14 +205,23 @@ void rotina()
 
   if ((millis() - ultimo_calculo_resultantes > 50) && !possuiRequisicaoPendente())
   {
-
     ultimo_calculo_resultantes = millis();
+    getForcasPontes();
+#if DEBUG
+    for (int i = 0; i < 6; i++)
+    {
+      Serial.print(forcas_pontes[i]);
+      Serial.print(",");
+    }
+
+    Serial.println("");
+#endif
 
     // Trava as requisições aqui, para não ser enviado informações que ainda estão
     // sendo convertidas
     is_slave_ocupado = true;
 
-    calculaResultantes();
+    // calculaResultantes();
 
     // Libera as requisições
     is_slave_ocupado = false;
@@ -214,6 +234,7 @@ void rotina()
 void inicializaPontes()
 {
   calculaOffSetsPontes();
+  // calibraCoeficientesProporcionalidade();
   setCoeficientesProporcionalidade();
 }
 
@@ -233,21 +254,27 @@ void inicializaDebug()
 // Se setado como debug, inicializa a serial
 #if DEBUG
   myDebug.begin(115200);
-  myDebug.println("Debugando...");
 #endif
 }
 
 void calibraCoeficientesProporcionalidade()
 {
+  beep(3);
+
   for (int i = 0; i < 6; i++)
   {
-    scales[i] = 10000.f;
+    beep();
+    delay(2000);
+    scales[i] = pontes[i].get_value(10) / PESO_REF;
+    // Serial.println(scales[i]);
   }
+
+  beep(4);
 }
 
 void setCoeficientesProporcionalidade()
 {
-  for (int i = 6; i < 6; i++)
+  for (int i = 0; i < 6; i++)
   {
     pontes[i].set_scale(scales[i]);
   }
@@ -255,10 +282,20 @@ void setCoeficientesProporcionalidade()
 
 void calculaOffSetsPontes()
 {
-  for (int i = 6; i < 6; i++)
+  for (int i = 0; i < 6; i++)
   {
     pontes[i].tare();
   }
+}
+
+float filtraValorPonte(float valor_anterior, float valor_atual)
+{
+  if (abs(valor_atual - valor_anterior) <= ((abs(valor_anterior) + 1) * 10))
+  {
+    return valor_atual;
+  }
+
+  return valor_anterior;
 }
 
 void getForcasPontes()
@@ -267,7 +304,7 @@ void getForcasPontes()
   {
     if (pontes[i].is_ready())
     {
-      forcas_pontes[i] = pontes[i].get_units();
+      forcas_pontes[i] = filtraValorPonte(forcas_pontes[i], pontes[i].get_units());
     }
   }
 }
@@ -377,6 +414,17 @@ void escreverDoisBytesWire(int intParaEnviar)
 {
   Wire.write((intParaEnviar >> 8) & 0xFF);
   Wire.write((intParaEnviar)&0xFF);
+}
+
+void beep(int qnt_beeps = 1)
+{
+  for (int i = 0; i < qnt_beeps; i++)
+  {
+    digitalWrite(BUZZER, HIGH);
+    delay(100);
+    digitalWrite(BUZZER, LOW);
+    delay(200);
+  }
 }
 
 // --------------------------------------------------------------------------------------------- //
