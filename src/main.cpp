@@ -17,6 +17,11 @@
 #include <HX711.h>
 
 // --------------------------------------------------------------------------------------------- //
+//  Informações I2C
+
+// Endereço I2C
+#define SLAVE_ADDRESS 0x17
+
 // Códigos de requisição
 #define DISPOSITIVO_INICIALIZANDO 0xFD
 #define DISPOSITIVO_OCUPADO 0xFE
@@ -28,16 +33,19 @@ uint8_t requisicao;
 // --------------------------------------------------------------------------------------------- //
 // Se usar em modo debug, setar como true
 #define DEBUG true
-
-unsigned long ultima_leitura_serial;
+#define BUZZER true
 
 #if DEBUG
 #define myDebug Serial
+#define BAUDRATE 115200
+unsigned long ultima_leitura_serial;
 #endif
 
-const int BUZZER = 13;
+#if BUZZER
+#define BUZZER_PIN 13
+#endif
 
-// --------------------------------------------------------------------------------------------- //
+// -----------#---------------------------------------------------------------------------------- //
 // Flags para status do dispositivo
 
 // Se ainda está inicializando o dispositivo, seta como true para não consumir a requisição e
@@ -72,15 +80,16 @@ Bridge pontes[6] = {
     Bridge(6, BRIDGE_SCK), Bridge(5, BRIDGE_SCK),  // Pontes 3 & 4
     Bridge(2, BRIDGE_SCK), Bridge(3, BRIDGE_SCK)}; // Pontes 5 & 6
 
-const int DISTANCIA_SG = 6; // 6 mm do ponto O até o centro do strain gauge
+#define DISTANCIA_SG 6 // 6 mm do ponto O até o centro do strain gauge
 
-// Temporario. Essas escalas devem ser calibradas periodicamente, uma vez que o conjunto esteja
-// finalizado
-float scales[6] = {2043.63, 2219.46,
-                   2088.70, 2184.90,
-                   2072.34, 2144.18};
+// Temporario. Essas escalas devem ser calibradas periodicamente com um peso de referência
+float coef_proporcao[6] = {
+    208219.81, 226134.46,
+    212822.10, 222634.70,
+    211122.60, 218470.76};
 
-const int PESO_REF = 185.1;
+#define GRAVIDADE 9.81                            // metros / s^2
+const float PESO_REFERENCIA = 0.1851 * GRAVIDADE; //quilogramas
 
 // Forcas aferidas por cada ponte
 float forcas_pontes[6] = {0};
@@ -91,8 +100,8 @@ float *forcas_pontes_b = (&forcas_pontes[2]);
 float *forcas_pontes_c = (&forcas_pontes[4]);
 
 // Valores das resultantes encontradas a cada interação
-int forca_x, forca_y, forca_z;
-int momento_roll, momento_pitch, momento_yaw;
+float forca_x, forca_y, forca_z;
+float momento_roll, momento_pitch, momento_yaw;
 
 // Devem ser calculadas em 20 Hz
 unsigned long ultimo_calculo_resultantes;
@@ -112,6 +121,8 @@ void inicializaPontes();
 void inicializaI2C();
 // Inicializacao do debug
 void inicializaDebug();
+// Inicializa o Buzzer para notificações sonoras
+void inicializaBuzzer();
 
 // --------------------------------------------------------------------------------------------- //
 // Rotina que ficará sendo executada no código
@@ -123,7 +134,8 @@ void rotina();
 void calibraCoeficientesProporcionalidade();
 void setCoeficientesProporcionalidade();
 // Calcula o offset para ser compensando quando não houver carga na ponte
-void calculaOffSetsPontes();
+void setOffSetsPontes();
+// Filtra os ruidos de grande intensidade das pontes, uma por vez
 float filtraValorPonte(float valor_anterior, float valor_atual);
 // Recupera todas as forças aferidas pelas pontes
 void getForcasPontes();
@@ -145,11 +157,9 @@ bool possuiRequisicaoPendente();
 // (int, float, double, long, etc), é necessário enviar um byte de cada vez.
 // long possue 4 bytes no ATmega328
 void escreverQuatroBytesWire(long longParaEnviar);
-// int possue 2 bytes
-void escreverDoisBytesWire(int intParaEnviar);
 
 // --------------------------------------------------------------------------------------------- //
-void beep(int qnt_beeps = 1);
+void alertaSonoro(int qnt_alertas);
 
 // --------------------------------------------------------------------------------------------- //
 //
@@ -182,18 +192,29 @@ void inicializacao()
 {
   // Função init do Arduino
   init();
-  // Inicializa o debug, se for setado true
-  inicializaDebug();
 
-  pinMode(BUZZER, OUTPUT);
+  // Inicializa o debug, se for setado true
+#if DEBUG
+  inicializaDebug();
+#endif
+
+  // Inicializa o buzzer, se for setado true
+#if BUZZER
+  inicializaBuzzer();
+#endif
 
   // inicializa as pontes
   inicializaPontes();
+
   // inicializa a comunicação I2c
   inicializaI2C();
 
+  // Depois que todas as funções forem inicializadas, inicia o timer para envio dos debugs
+#if DEBUG
   ultima_leitura_serial = millis();
+#endif
 
+  ultimo_calculo_resultantes = millis();
   // Pronto, tudo inicializado
   is_slave_inicializando = false;
 }
@@ -201,13 +222,19 @@ void inicializacao()
 // --------------------------------------------------------------------------------------------- //
 void rotina()
 {
+  // A cada interação verifica se os HX711 estão com os valores prontos, e realiza a leitura das
+  // forças atuando em cada ponte
   getForcasPontes();
 
-  if ((millis() - ultimo_calculo_resultantes > 50) && !possuiRequisicaoPendente())
-  {
-    ultimo_calculo_resultantes = millis();
-    getForcasPontes();
+  // Com as forças lidas, calcula as resultantes
+  calculaResultantes();
+
 #if DEBUG
+  // Debug qualquer informação aqui
+  if ((millis() - ultima_leitura_serial > 50) && !possuiRequisicaoPendente())
+  {
+    ultima_leitura_serial = millis();
+
     for (int i = 0; i < 6; i++)
     {
       Serial.print(forcas_pontes[i]);
@@ -215,17 +242,8 @@ void rotina()
     }
 
     Serial.println("");
-#endif
-
-    // Trava as requisições aqui, para não ser enviado informações que ainda estão
-    // sendo convertidas
-    is_slave_ocupado = true;
-
-    // calculaResultantes();
-
-    // Libera as requisições
-    is_slave_ocupado = false;
   }
+#endif
 }
 
 // --------------------------------------------------------------------------------------------- //
@@ -233,54 +251,72 @@ void rotina()
 
 void inicializaPontes()
 {
-  calculaOffSetsPontes();
+  // Em cada inicialização, o sistema deve calcular o offset de cada ponte
+  setOffSetsPontes();
+  // TODO: temporario. As pontes devem ser calibradas periodicamente
   // calibraCoeficientesProporcionalidade();
+  // Apos calibração, seta os coeficientes de cada ponte
   setCoeficientesProporcionalidade();
 }
 
 void inicializaI2C()
 {
-  // Endereço slave do dispositivo
-  const uint8_t meu_endereco_I2C = 0x17;
-
   // Inicializações do I2C
-  Wire.begin(meu_endereco_I2C);
+  Wire.begin(SLAVE_ADDRESS);
   Wire.onReceive(quandoReceber);
   Wire.onRequest(quandoRequisitado);
 }
 
 void inicializaDebug()
 {
-// Se setado como debug, inicializa a serial
-#if DEBUG
-  myDebug.begin(115200);
-#endif
+  myDebug.begin(BAUDRATE);
+}
+
+void inicializaBuzzer()
+{
+  pinMode(BUZZER_PIN, OUTPUT);
 }
 
 void calibraCoeficientesProporcionalidade()
 {
-  beep(3);
+
+  // Recomenda-se a utilização do buzzer para facilitar o acompanhamento do processo de calibração
+  // do algoritmo. A versão final desse método será uma sistema de equações.
+#if BUZZER
+  alertaSonoro(2);
+#endif
 
   for (int i = 0; i < 6; i++)
   {
-    beep();
+#if BUZZER
+    alertaSonoro(1);
+#endif
+
+    // Delay para que haja tempo de mover o peso de referência de uma ponte para outra
     delay(2000);
-    scales[i] = pontes[i].get_value(10) / PESO_REF;
-    // Serial.println(scales[i]);
+
+    // O calculo do coefienciente, nesse caso, é bastante simples
+    coef_proporcao[i] = pontes[i].get_value(10) / PESO_REFERENCIA;
+
+#if DEBUG
+    Serial.println(coef_proporcao[i]);
+#endif
   }
 
-  beep(4);
+#if BUZZER
+  alertaSonoro(3);
+#endif
 }
 
 void setCoeficientesProporcionalidade()
 {
   for (int i = 0; i < 6; i++)
   {
-    pontes[i].set_scale(scales[i]);
+    pontes[i].set_scale(coef_proporcao[i]);
   }
 }
 
-void calculaOffSetsPontes()
+void setOffSetsPontes()
 {
   for (int i = 0; i < 6; i++)
   {
@@ -290,7 +326,7 @@ void calculaOffSetsPontes()
 
 float filtraValorPonte(float valor_anterior, float valor_atual)
 {
-  if (abs(valor_atual - valor_anterior) <= ((abs(valor_anterior) + 1) * 10))
+  if (abs(valor_atual - valor_anterior) / 100 <= 0.02)
   {
     return valor_atual;
   }
@@ -311,13 +347,18 @@ void getForcasPontes()
 
 void calculaResultantes()
 {
-  forca_x++;
-  forca_y++;
-  forca_z++;
+  if ((millis() - ultimo_calculo_resultantes > 50) && !possuiRequisicaoPendente())
+  {
+    ultimo_calculo_resultantes = millis();
+    // Trava as requisições aqui, para não ser enviado informações que ainda estão
+    // sendo convertidas
+    is_slave_ocupado = true;
 
-  momento_pitch++;
-  momento_roll++;
-  momento_yaw++;
+    // TODO: Por enquanto, não faz nada
+
+    // Libera as requisições
+    is_slave_ocupado = false;
+  }
 }
 
 void quandoRequisitado()
@@ -332,18 +373,20 @@ void quandoRequisitado()
     Wire.write(DISPOSITIVO_INICIALIZANDO);
   }
   else if (requisicao == 0x05)
-  {                                 // Requisicao das forças: 12 Bytes
-    escreverDoisBytesWire(forca_x); // Fx
-    escreverDoisBytesWire(forca_y); // Fy
-    escreverDoisBytesWire(forca_z); // Fz
+  {
+    // Requisicao das forças: 12 Bytes
+    escreverQuatroBytesWire((long)(forca_x * 1000)); // Fx
+    escreverQuatroBytesWire((long)(forca_y * 1000)); // Fy
+    escreverQuatroBytesWire((long)(forca_z * 1000)); // Fz
 
     consumirRequisicao();
   }
   else if (requisicao == 0x06)
-  {                                       // Requisicao dos momentos: 12 Bytes
-    escreverDoisBytesWire(momento_pitch); // Fx
-    escreverDoisBytesWire(momento_roll);  // Fy
-    escreverDoisBytesWire(momento_yaw);   // Fz
+  {
+    // Requisicao dos momentos: 12 Bytes
+    escreverQuatroBytesWire((long)(momento_pitch * 1000));
+    escreverQuatroBytesWire((long)(momento_roll * 1000));
+    escreverQuatroBytesWire((long)(momento_yaw * 1000));
 
     consumirRequisicao();
   }
@@ -410,19 +453,13 @@ void escreverQuatroBytesWire(long longParaEnviar)
                                              // ---- ---- ---- ---- ---- ---- BBBB BBBB
 }
 
-void escreverDoisBytesWire(int intParaEnviar)
+void alertaSonoro(int qnt_alertas)
 {
-  Wire.write((intParaEnviar >> 8) & 0xFF);
-  Wire.write((intParaEnviar)&0xFF);
-}
-
-void beep(int qnt_beeps = 1)
-{
-  for (int i = 0; i < qnt_beeps; i++)
+  for (int i = 0; i < qnt_alertas; i++)
   {
-    digitalWrite(BUZZER, HIGH);
+    digitalWrite(BUZZER_PIN, HIGH);
     delay(100);
-    digitalWrite(BUZZER, LOW);
+    digitalWrite(BUZZER_PIN, LOW);
     delay(200);
   }
 }
