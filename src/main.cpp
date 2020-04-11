@@ -136,7 +136,7 @@ void setCoeficientesProporcionalidade();
 // Calcula o offset para ser compensando quando não houver carga na ponte
 void setOffSetsPontes();
 // Filtra os ruidos de grande intensidade das pontes, uma por vez
-float filtraValorPonte(float valor_anterior, float valor_atual);
+float filtraValorPonte(float valor_anterior, float valor_atual, float alpha);
 // Recupera todas as forças aferidas pelas pontes
 void getForcasPontes();
 // Calcula as forças resultantes de cada componente
@@ -324,14 +324,9 @@ void setOffSetsPontes()
   }
 }
 
-float filtraValorPonte(float valor_anterior, float valor_atual)
+float filtraValorPonte(float valor_anterior, float valor_atual, float alpha)
 {
-  if (abs(valor_atual - valor_anterior) / 100 <= 0.02)
-  {
-    return valor_atual;
-  }
-
-  return valor_anterior;
+  return (alpha * valor_anterior + (1 - alpha) * valor_atual);
 }
 
 void getForcasPontes()
@@ -340,7 +335,7 @@ void getForcasPontes()
   {
     if (pontes[i].is_ready())
     {
-      forcas_pontes[i] = filtraValorPonte(forcas_pontes[i], pontes[i].get_units());
+      forcas_pontes[i] = filtraValorPonte(forcas_pontes[i], pontes[i].get_units(), 0.1);
     }
   }
 }
