@@ -231,17 +231,18 @@ void rotina()
 
 #if DEBUG
   // Debug qualquer informação aqui
-  if ((millis() - ultima_leitura_serial > 50) && !possuiRequisicaoPendente())
+  if ((millis() - ultima_leitura_serial > 100) && !possuiRequisicaoPendente())
   {
     ultima_leitura_serial = millis();
 
+    Serial.print(millis());
     for (int i = 0; i < 6; i++)
     {
+      Serial.print(";");
       Serial.print(forcas_pontes[i]);
-      Serial.print(",");
     }
 
-    Serial.println("");
+    Serial.println();
   }
 #endif
 }
@@ -335,7 +336,7 @@ void getForcasPontes()
   {
     if (pontes[i].is_ready())
     {
-      forcas_pontes[i] = filtraValorPonte(forcas_pontes[i], pontes[i].get_units(), 0.1);
+      forcas_pontes[i] = pontes[i].get_units(); // filtraValorPonte(forcas_pontes[i], pontes[i].get_units(), 0.0);
     }
   }
 }
