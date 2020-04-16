@@ -1,5 +1,5 @@
-#ifndef HX711_h
-#define HX711_h
+#ifndef MOVINGMEDIANFILTER_h
+#define MOVINGMEDIANFILTER_h
 
 #if ARDUINO >= 100
 #include "Arduino.h"
@@ -7,7 +7,7 @@
 #include "WProgram.h"
 #endif
 
-class MovingMedianFilter
+class MovingMedian
 {
 private:
     int windows_size = 3;
@@ -20,12 +20,12 @@ private:
     void sort();
 
 public:
-    MovingMedianFilter(int windows_size);
-    virtual ~MovingMedianFilter();
+    MovingMedian(int windows_size);
+    virtual ~MovingMedian();
 
     void addValue(float value);
     float getRawValue();
     float getFiltered();
 };
 
-#endif /* HX711_h */
+#endif /* MOVINGMEDIANFILTER_h */

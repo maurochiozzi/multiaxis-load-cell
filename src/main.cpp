@@ -15,6 +15,7 @@
 #include <Wire.h>
 
 #include <HX711.h>
+#include <MovingMedianFilter.h>
 
 // --------------------------------------------------------------------------------------------- //
 //  Informações I2C
@@ -91,13 +92,19 @@ float coef_proporcao[6] = {
 #define GRAVIDADE 9.81                            // metros / s^2
 const float PESO_REFERENCIA = 0.1851 * GRAVIDADE; //quilogramas
 
+// Tamanho da janela que irá ser utilizada para filtrar os dados pela mediana
+#define WINDOWS_SIZE 3
+
 // Forcas aferidas por cada ponte
-float forcas_pontes[6] = {0};
+MovingMedian forcas_pontes[6] = {
+    MovingMedian(WINDOWS_SIZE), MovingMedian(WINDOWS_SIZE),
+    MovingMedian(WINDOWS_SIZE), MovingMedian(WINDOWS_SIZE),
+    MovingMedian(WINDOWS_SIZE), MovingMedian(WINDOWS_SIZE)};
 
 // Separação dos objetos, para ficar mais intuivo no calculo das resultantes
-float *forcas_pontes_a = (&forcas_pontes[0]);
-float *forcas_pontes_b = (&forcas_pontes[2]);
-float *forcas_pontes_c = (&forcas_pontes[4]);
+MovingMedian *forcas_pontes_a = (&forcas_pontes[0]);
+MovingMedian *forcas_pontes_b = (&forcas_pontes[2]);
+MovingMedian *forcas_pontes_c = (&forcas_pontes[4]);
 
 // Valores das resultantes encontradas a cada interação
 float forca_x, forca_y, forca_z;
@@ -236,10 +243,13 @@ void rotina()
     ultima_leitura_serial = millis();
 
     Serial.print(millis());
+
     for (int i = 0; i < 6; i++)
     {
       Serial.print(";");
-      Serial.print(forcas_pontes[i]);
+      Serial.print(forcas_pontes[i].getRawValue());
+      Serial.print(";");
+      Serial.print(forcas_pontes[i].getFiltered());
     }
 
     Serial.println();
@@ -258,6 +268,15 @@ void inicializaPontes()
   // calibraCoeficientesProporcionalidade();
   // Apos calibração, seta os coeficientes de cada ponte
   setCoeficientesProporcionalidade();
+
+  // Faz leituras iniciais para inciar a janela de valores
+  // do filtro
+  for (int i = 0; i < WINDOWS_SIZE; i++)
+  {
+    getForcasPontes();
+
+    delay(110);
+  }
 }
 
 void inicializaI2C()
@@ -325,18 +344,13 @@ void setOffSetsPontes()
   }
 }
 
-float filtraValorPonte(float valor_anterior, float valor_atual, float alpha)
-{
-  return (alpha * valor_anterior + (1 - alpha) * valor_atual);
-}
-
 void getForcasPontes()
 {
   for (int i = 0; i < 6; i++)
   {
     if (pontes[i].is_ready())
     {
-      forcas_pontes[i] = pontes[i].get_units(); // filtraValorPonte(forcas_pontes[i], pontes[i].get_units(), 0.0);
+      forcas_pontes[i].addValue(pontes[i].get_units());
     }
   }
 }

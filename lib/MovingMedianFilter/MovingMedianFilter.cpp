@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <MovingMedianFilter.h>
 
-MovingMedianFilter::MovingMedianFilter(int _windows_size)
+MovingMedian::MovingMedian(int _windows_size)
 {
     windows_size = _windows_size;
 
@@ -15,25 +15,25 @@ MovingMedianFilter::MovingMedianFilter(int _windows_size)
     }
 }
 
-MovingMedianFilter::~MovingMedianFilter()
+MovingMedian::~MovingMedian()
 {
     free(values);
     free(ordered_values);
 }
 
-void MovingMedianFilter::addValue(float value)
+void MovingMedian::addValue(float value)
 {
     values[index_position] = value;
 
     index_position = (index_position + 1) % windows_size;
 }
 
-float MovingMedianFilter::getRawValue()
+float MovingMedian::getRawValue()
 {
-    return values[index_position]; // Nope. Looks good, works terrible
+    return values[(index_position + (windows_size - 2)) % windows_size];
 }
 
-void MovingMedianFilter::sort()
+void MovingMedian::sort()
 {
     float key;
     int i, j;
@@ -51,7 +51,7 @@ void MovingMedianFilter::sort()
     }
 }
 
-float MovingMedianFilter::getMedian()
+float MovingMedian::getMedian()
 {
     memcpy(ordered_values, values, sizeof(float) * windows_size);
     sort();
@@ -67,7 +67,7 @@ float MovingMedianFilter::getMedian()
             2);
 }
 
-float MovingMedianFilter::getFiltered()
+float MovingMedian::getFiltered()
 {
     return getMedian();
 }
