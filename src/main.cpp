@@ -247,9 +247,9 @@ void rotina()
     for (int i = 0; i < 6; i++)
     {
       Serial.print(";");
-      Serial.print(forcas_pontes[i].getRawValue());
+      Serial.print(forcas_pontes[i].getRawValue(), 4);
       Serial.print(";");
-      Serial.print(forcas_pontes[i].getFiltered());
+      Serial.print(forcas_pontes[i].getFiltered(), 4);
     }
 
     Serial.println();
