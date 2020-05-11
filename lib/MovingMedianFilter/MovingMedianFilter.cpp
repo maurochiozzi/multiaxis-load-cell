@@ -1,9 +1,12 @@
-#include <Arduino.h>
 #include <MovingMedianFilter.h>
+#include <stdlib.h>
+#include <string.h>
 
 MovingMedian::MovingMedian(int _windows_size)
 {
     windows_size = _windows_size;
+
+    middle = (windows_size / 2);
 
     values = (float *)malloc(windows_size * sizeof(float));
     ordered_values = (float *)malloc(windows_size * sizeof(float));
@@ -55,8 +58,6 @@ float MovingMedian::getMedian()
 {
     memcpy(ordered_values, values, sizeof(float) * windows_size);
     sort();
-
-    int middle = (windows_size / 2);
 
     if ((windows_size % 2))
     {

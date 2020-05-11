@@ -1,16 +1,11 @@
 #ifndef MOVINGMEDIANFILTER_h
 #define MOVINGMEDIANFILTER_h
 
-#if ARDUINO >= 100
-#include "Arduino.h"
-#else
-#include "WProgram.h"
-#endif
-
 class MovingMedian
 {
 private:
     int windows_size = 3;
+    int middle;
     float *values;
     float *ordered_values;
 

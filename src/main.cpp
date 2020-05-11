@@ -290,6 +290,7 @@ void inicializaI2C()
 void inicializaDebug()
 {
   myDebug.begin(BAUDRATE);
+  myDebug.println("time;q_1;q_1f;q_2;q_2f;q_3;q_3f;q_4;q_4f;q_5;q_5f;q_6;q_6f");
 }
 
 void inicializaBuzzer()
